@@ -1,0 +1,6 @@
+[Details]
+Icon = "icon.png"
+Name = "Discord Uploader"
+ID = "com.github.sevencomplex.discord-uploader"
+Version = "1.0.0"
+Build = 8

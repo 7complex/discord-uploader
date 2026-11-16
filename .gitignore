@@ -1,0 +1,43 @@
+# =============================================================================
+# Discord Uploader — .gitignore global (raiz do repositório)
+# =============================================================================
+
+# Binários gerados (GUI Fyne wrapper e GUI nativa)
+dist/
+*.AppImage
+*.exe
+gui/gui
+gui/DiscordUploader
+native/native
+native/DiscordUploader
+native/DiscordUploader.exe
+
+# Logs
+*.log
+
+# macOS
+.DS_Store
+
+# Configurações de editores e IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Go
+/vendor/
+*.exe
+/test-results/
+
+# Fyne / AppImage builds
+squashfs-root/
+AppDir/
+*.tar.xz
+
+# Cópia do CLI gerada no build da GUI (derivada de ../discord-uploader.sh)
+gui/discord-uploader.sh
+
+# Variáveis de ambiente locais
+.env
+.env.local

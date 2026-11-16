@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v4
+
+      - name: Instalar ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Rodar ShellCheck no CLI Bash
+        run: shellcheck -S warning discord-uploader.sh
+
+      - name: Verificar sintaxe do Bash
+        run: bash -n discord-uploader.sh
+
+      - name: Instalar Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Build da GUI wrapper (Go)
+        working-directory: gui
+        run: |
+          go mod tidy
+          go build ./...
+
+      - name: Build da GUI nativa (Go)
+        working-directory: native
+        run: |
+          go mod tidy
+          go build ./...
+
+      - name: Vet do código Go (gui)
+        working-directory: gui
+        run: go vet ./...
+
+      - name: Vet do código Go (native)
+        working-directory: native
+        run: go vet ./...

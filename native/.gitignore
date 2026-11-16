@@ -1,0 +1,11 @@
+# Binários gerados
+DiscordUploader
+DiscordUploader.exe
+
+# Build artifacts
+dist/
+squashfs-root/
+
+# Go
+*.exe
+/vendor/

@@ -1,0 +1,14 @@
+# Cópia gerada do CLI (derivada de ../discord-uploader.sh, não commitar)
+discord-uploader.sh
+
+# Build artifacts
+Discord*.AppImage
+dist/
+squashfs-root/
+
+# Go
+*.exe
+/vendor/
+
+# Fyne
+icon.png
