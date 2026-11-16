@@ -1149,7 +1149,7 @@ fi
 if [[ -t 0 ]] && (( CONFIRMAR == 0 )); then
     printf '%sDeseja iniciar o envio? [s/N]: %s' "$WHITE" "$RESET"
     prompt_var CONFIRMA "$(printf '%sDeseja iniciar o envio? [s/N]: %s' "$WHITE" "$RESET")"
-    if [[ ! "$CONFIRMA" =~ ^[sS]$ ]]; then
+    if [[ ! "$RESPOSTA_CONFIRMA" =~ ^[sS]$ ]]; then
         warning "Envio cancelado."
         exit 0
     fi
@@ -1282,7 +1282,9 @@ printf '\n'
 printf '%sDiscord Uploader — sessão encerrada.%s\n' "$GRAY" "$RESET"
 
 # Fecha o fd de log, se aberto.
-[[ -n "$LOG_FILE" ]] && exec 3>&- || true
+if [[ -n "$LOG_FILE" ]]; then
+    exec 3>&-
+fi
 
 # Códigos de saída úteis também para scripts que chamem o uploader.
 if (( INTERROMPIDO )); then
