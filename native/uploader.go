@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"fyne.io/fyne/v2"
 )
 
 // UploadResult é o resultado do upload de um único arquivo.
@@ -215,6 +217,45 @@ func UploadFile(ctx context.Context, webhookURL string, arquivo string, cfg Uplo
 		result.Message = fmt.Sprintf("Falha permanente. HTTP %d.", httpCode)
 		return result
 	}
+}
+
+// UploadFileFromURI envia um arquivo a partir de uma URI do Android
+// (content://...), copiando para um temp file e aplicando a mesma lógica
+// de retry de UploadFile.
+func UploadFileFromURI(ctx context.Context, webhookURL string, uri fyne.URIReadCloser, cfg UploadConfig) UploadResult {
+	result := UploadResult{}
+
+	defer uri.Close()
+
+	// Copia o conteúdo da URI para um arquivo temporário.
+	tmp, err := os.CreateTemp("", "discord-upload-*.tmp")
+	if err != nil {
+		result.Message = fmt.Sprintf("Erro ao criar temp file: %v", err)
+		return result
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	_, err = io.Copy(tmp, uri)
+	if err != nil {
+		result.Message = fmt.Sprintf("Erro ao ler URI: %v", err)
+		return result
+	}
+	if err := tmp.Close(); err != nil {
+		result.Message = fmt.Sprintf("Erro ao fechar temp file: %v", err)
+		return result
+	}
+
+	// Reabre para obter tamanho e usar UploadFile.
+	info, err := os.Stat(tmpPath)
+	if err != nil {
+		result.Message = fmt.Sprintf("Não foi possível ler o temp file: %v", err)
+		return result
+	}
+	result.BytesSent = info.Size()
+
+	// Delegar a lógica de retry ao UploadFile com o caminho temp.
+	return UploadFile(ctx, webhookURL, tmpPath, cfg)
 }
 
 func extrairRetryAfter(header http.Header, body []byte) time.Duration {

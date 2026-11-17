@@ -9,3 +9,4 @@ squashfs-root/
 # Go
 *.exe
 /vendor/
+*.apk

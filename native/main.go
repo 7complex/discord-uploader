@@ -7,7 +7,6 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/theme"
 )
 
 const version = "1.0.0"
@@ -23,7 +22,7 @@ const defaultMaxRetryAfter = 60
 
 func main() {
 	a := app.New()
-	a.Settings().SetTheme(theme.DarkTheme()) // tema escuro fixo
+	a.Settings().SetTheme(NewAMOLEDTheme()) // tema AMOLED fixo
 
 	w := a.NewWindow("Discord Uploader")
 	w.Resize(fyne.NewSize(700, 600))

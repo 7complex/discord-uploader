@@ -1,8 +1,6 @@
 [Details]
-Name="Discord Uploader"
-Icon="icon.png"
-ID="com.github.yan.discord-uploader"
-Version="1.0.0"
-Build=1
-Exec="Discord Uploader"
-Categories="Network;FileTransfer;"
+Icon = "icon.png"
+Name = "Discord Uploader"
+ID = "com.github.sevencomplex.discorduploader"
+Version = "1.0.0"
+Build = 2
