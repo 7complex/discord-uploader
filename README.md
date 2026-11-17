@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![ShellCheck](https://img.shields.io/badge/ShellCheck-pass-brightgreen)](https://github.com/7complex/discord-uploader/actions)
 [![Go](https://img.shields.io/badge/Go-1.21%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/)
-[![Fyne](https://img.shields.io/badge/Fyne-2.4.4-009688?logo=go&logoColor=white)](https://fyne.io/)
+[![Fyne](https://img.shields.io/badge/Fyne-2.6.0-009688?logo=go&logoColor=white)](https://fyne.io/)
 [![Android](https://img.shields.io/badge/Android-APK-green?logo=android&logoColor=white)](https://github.com/7complex/discord-uploader/releases)
 
 Envia arquivos para um canal do Discord via webhook. Disponível em quatro frentes:
