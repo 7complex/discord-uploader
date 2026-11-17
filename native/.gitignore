@@ -10,3 +10,5 @@ squashfs-root/
 *.exe
 /vendor/
 *.apk
+native/dist/
+*.AppImage
