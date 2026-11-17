@@ -3,4 +3,4 @@ Icon = "icon.png"
 Name = "Discord Uploader"
 ID = "com.github.sevencomplex.discorduploader"
 Version = "1.0.0"
-Build = 2
+Build = 6

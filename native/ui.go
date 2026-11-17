@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -20,7 +21,6 @@ const (
 	isAndroid = runtime.GOOS == "android"
 )
 
-// DiscordUploaderWindow concentra todos os widgets e o estado da janela.
 type DiscordUploaderWindow struct {
 	app        fyne.App
 	window     fyne.Window
@@ -29,7 +29,6 @@ type DiscordUploaderWindow struct {
 	cancelFn   context.CancelFunc
 	executando bool
 
-	// Comum a todas as plataformas
 	webhookEntry   *widget.Entry
 	webhookFileLbl *widget.Label
 	contentEntry   *widget.Entry
@@ -41,28 +40,15 @@ type DiscordUploaderWindow struct {
 	listaLog       *widget.Entry
 	lblResumo      *widget.Label
 
-	// Apenas Desktop
 	folderEntry  *widget.Entry
 	btnProcurar  *widget.Button
 	recursivoChk *widget.Check
 	ocultosChk   *widget.Check
 	btnTestar    *widget.Button
 
-	// Apenas Android
 	btnSelecionarArquivos *widget.Button
 	lblArquivosSel        *widget.Label
 	arquivosSelURI        []fyne.URI
-}
-
-func setEnabled(o fyne.Disableable, enabled bool) {
-	if o == nil {
-		return
-	}
-	if enabled {
-		o.Enable()
-	} else {
-		o.Disable()
-	}
 }
 
 func newWindow(a fyne.App, w fyne.Window) {
@@ -74,16 +60,13 @@ func newWindow(a fyne.App, w fyne.Window) {
 		executando: false,
 	}
 
-	// ==================== Webhook (comum) ====================
 	ui.webhookEntry = widget.NewEntry()
 	ui.webhookEntry.SetPlaceHolder("https://discord.com/api/webhooks/...")
 	ui.webhookEntry.Password = true
 
 	btnCarregarWebhook := widget.NewButton("Carregar de arquivo...", func() {
 		dlg := dialog.NewFileOpen(func(rc fyne.URIReadCloser, err error) {
-			if err != nil || rc == nil {
-				return
-			}
+			if err != nil || rc == nil { return }
 			defer rc.Close()
 			data, err := io.ReadAll(rc)
 			if err != nil {
@@ -93,10 +76,7 @@ func newWindow(a fyne.App, w fyne.Window) {
 			linha := ""
 			for _, l := range strings.Split(string(data), "\n") {
 				l = strings.TrimRight(l, "\r")
-				if strings.TrimSpace(l) != "" {
-					linha = l
-					break
-				}
+				if strings.TrimSpace(l) != "" { linha = l; break }
 			}
 			ui.webhookEntry.SetText(linha)
 			ui.webhookFileLbl.SetText("(" + rc.URI().Path() + ")")
@@ -106,97 +86,84 @@ func newWindow(a fyne.App, w fyne.Window) {
 	ui.webhookFileLbl = widget.NewLabel("")
 	ui.webhookFileLbl.TextStyle = fyne.TextStyle{Italic: true}
 
-	webhookRow := container.NewVBox(
-		container.NewBorder(
-			nil, nil,
-			widget.NewLabel("Webhook do Discord:"),
-			btnCarregarWebhook,
-			ui.webhookEntry,
-		),
-		container.NewHBox(layout.NewSpacer(), ui.webhookFileLbl),
-	)
-
-	// ==================== Content (comum) ====================
 	ui.contentEntry = widget.NewEntry()
 	ui.contentEntry.SetPlaceHolder("Mensagem opcional")
 	lblContentHelp := widget.NewLabel("Mensagem que acompanha cada arquivo")
 	lblContentHelp.TextStyle = fyne.TextStyle{Italic: true}
 
-	contentRow := container.NewVBox(
-		container.NewBorder(
-			nil, nil,
-			widget.NewLabel("Content (opcional):"),
-			nil,
-			ui.contentEntry,
-		),
-		lblContentHelp,
-	)
-
 	if isAndroid {
-		ui.montarAndroid(w, webhookRow, contentRow)
+		ui.montarAndroid(w, btnCarregarWebhook, lblContentHelp)
 	} else {
-		ui.montarDesktop(w, webhookRow, contentRow)
+		ui.montarDesktop(w, btnCarregarWebhook, lblContentHelp)
 	}
 }
 
-func (ui *DiscordUploaderWindow) montarDesktop(w fyne.Window, webhookRow, contentRow *fyne.Container) {
+func (ui *DiscordUploaderWindow) montarDesktop(w fyne.Window, btnCarregarWebhook *widget.Button, lblContentHelp *widget.Label) {
+	webhookRow := container.NewVBox(
+		container.NewBorder(nil, nil, widget.NewLabel("Webhook do Discord:"), btnCarregarWebhook, ui.webhookEntry),
+		container.NewHBox(layout.NewSpacer(), ui.webhookFileLbl),
+	)
+	contentRow := container.NewVBox(
+		container.NewBorder(nil, nil, widget.NewLabel("Content (opcional):"), nil, ui.contentEntry),
+		lblContentHelp,
+	)
+
 	ui.folderEntry = widget.NewEntry()
 	ui.folderEntry.SetPlaceHolder("/caminho/da/pasta")
 	btnProcurar := widget.NewButton("Procurar...", func() {
 		dlg := dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
-			if err != nil || uri == nil {
-				return
-			}
+			if err != nil || uri == nil { return }
 			ui.folderEntry.SetText(uri.Path())
 		}, w)
 		dlg.Show()
 	})
 	ui.btnProcurar = btnProcurar
 
+	pastaRow := container.NewBorder(nil, nil, widget.NewLabel("Pasta:"), btnProcurar, ui.folderEntry)
+
 	ui.recursivoChk = widget.NewCheck("Recursivo (-r)", nil)
 	ui.ocultosChk = widget.NewCheck("Ignorar ocultos (-H)", nil)
+	checks := container.NewHBox(ui.recursivoChk, ui.ocultosChk)
 
 	ui.btnTestar = widget.NewButton("Testar (dry-run)", ui.onTestar)
 	ui.btnIniciar = widget.NewButton("Iniciar envio", ui.onIniciar)
 	ui.btnCancelar = widget.NewButton("Cancelar", ui.onCancelar)
 	ui.btnCancelar.Disable()
-
-	pastaRow := container.NewBorder(
-		nil, nil,
-		widget.NewLabel("Pasta:"),
-		btnProcurar,
-		ui.folderEntry,
-	)
-
-	checks := container.NewHBox(ui.recursivoChk, ui.ocultosChk)
-
 	btns := container.NewHBox(ui.btnTestar, ui.btnIniciar, ui.btnCancelar)
 
-	ui.montarComum(w, webhookRow, pastaRow, checks, contentRow, btns)
+	ui.montarComum(w, webhookRow, pastaRow, checks, contentRow, btns, false)
 }
 
-func (ui *DiscordUploaderWindow) montarAndroid(w fyne.Window, webhookRow, contentRow *fyne.Container) {
+func (ui *DiscordUploaderWindow) montarAndroid(w fyne.Window, btnCarregarWebhook *widget.Button, lblContentHelp *widget.Label) {
+	webhookRow := container.NewVBox(
+		widget.NewLabel("Webhook do Discord:"),
+		ui.webhookEntry,
+		btnCarregarWebhook,
+		container.NewHBox(layout.NewSpacer(), ui.webhookFileLbl),
+	)
+	contentRow := container.NewVBox(
+		widget.NewLabel("Content (opcional):"),
+		ui.contentEntry,
+		lblContentHelp,
+	)
+
 	ui.btnSelecionarArquivos = widget.NewButton("Selecionar Pasta de Arquivos...", ui.onSelecionarArquivosAndroid)
 	ui.btnSelecionarArquivos.Importance = widget.MediumImportance
 	ui.lblArquivosSel = widget.NewLabel("Nenhum arquivo selecionado")
 	ui.lblArquivosSel.TextStyle = fyne.TextStyle{Italic: true}
 
-	androidRow := container.NewVBox(
-		container.NewHBox(ui.btnSelecionarArquivos, layout.NewSpacer()),
-		ui.lblArquivosSel,
-	)
+	pastaRow := container.NewVBox(ui.btnSelecionarArquivos, ui.lblArquivosSel)
 
 	ui.btnIniciar = widget.NewButton("Iniciar Envio", ui.onIniciarAndroid)
 	ui.btnIniciar.Importance = widget.HighImportance
 	ui.btnCancelar = widget.NewButton("Cancelar", ui.onCancelar)
 	ui.btnCancelar.Disable()
+	btns := container.NewGridWithColumns(2, ui.btnIniciar, ui.btnCancelar)
 
-	btns := container.NewHBox(ui.btnIniciar, ui.btnCancelar)
-
-	ui.montarComum(w, webhookRow, androidRow, nil, contentRow, btns)
+	ui.montarComum(w, webhookRow, pastaRow, nil, contentRow, btns, true)
 }
 
-func (ui *DiscordUploaderWindow) montarComum(w fyne.Window, webhookRow, pastaRow, checks, contentRow, btns *fyne.Container) {
+func (ui *DiscordUploaderWindow) montarComum(w fyne.Window, webhookRow, pastaRow, checks, contentRow, btns *fyne.Container, mobile bool) {
 	ui.progresso = widget.NewProgressBar()
 	ui.progresso.Min = 0
 	ui.progresso.Max = 100
@@ -211,54 +178,19 @@ func (ui *DiscordUploaderWindow) montarComum(w fyne.Window, webhookRow, pastaRow
 	ui.btnSalvar = widget.NewButton("Salvar relatório...", ui.onSalvar)
 	ui.btnSalvar.Disable()
 
-	progressRow := container.NewVBox(
-		ui.progresso,
-		ui.lblProgresso,
-	)
-
+	progressRow := container.NewVBox(ui.progresso, ui.lblProgresso)
+	logHeight := float32(220)
+	if mobile { logHeight = 150 }
 	logScroll := container.NewScroll(ui.listaLog)
-	logScroll.SetMinSize(fyne.NewSize(0, 220))
+	logScroll.SetMinSize(fyne.NewSize(0, logHeight))
 
-	resumoRow := container.NewHBox(
-		ui.lblResumo,
-		layout.NewSpacer(),
-		ui.btnSalvar,
-	)
+	resumoRow := container.NewHBox(ui.lblResumo, layout.NewSpacer(), ui.btnSalvar)
 
 	var conteudo *fyne.Container
 	if checks != nil {
-		conteudo = container.NewVBox(
-			webhookRow,
-			widget.NewSeparator(),
-			pastaRow,
-			checks,
-			widget.NewSeparator(),
-			contentRow,
-			widget.NewSeparator(),
-			btns,
-			widget.NewSeparator(),
-			progressRow,
-			listaTitle(),
-			logScroll,
-			widget.NewSeparator(),
-			resumoRow,
-		)
+		conteudo = container.NewVBox(webhookRow, widget.NewSeparator(), pastaRow, checks, widget.NewSeparator(), contentRow, widget.NewSeparator(), btns, widget.NewSeparator(), progressRow, listaTitle(), logScroll, widget.NewSeparator(), resumoRow)
 	} else {
-		conteudo = container.NewVBox(
-			webhookRow,
-			widget.NewSeparator(),
-			pastaRow,
-			widget.NewSeparator(),
-			contentRow,
-			widget.NewSeparator(),
-			btns,
-			widget.NewSeparator(),
-			progressRow,
-			listaTitle(),
-			logScroll,
-			widget.NewSeparator(),
-			resumoRow,
-		)
+		conteudo = container.NewVBox(webhookRow, widget.NewSeparator(), pastaRow, widget.NewSeparator(), contentRow, widget.NewSeparator(), btns, widget.NewSeparator(), progressRow, listaTitle(), logScroll, widget.NewSeparator(), resumoRow)
 	}
 
 	w.SetContent(container.NewVScroll(conteudo))
@@ -309,38 +241,41 @@ func (ui *DiscordUploaderWindow) onIniciar() {
 	ui.executar(false, pasta, webhook, arquivos)
 }
 
-// ==================== Android ====================
-
 func (ui *DiscordUploaderWindow) onSelecionarArquivosAndroid() {
 	dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
 		if err != nil {
 			dialog.ShowError(err, ui.window)
 			return
 		}
-		if uri == nil {
-			return
-		}
+		if uri == nil { return }
 
-		// Lista os arquivos na pasta
-		list, err := uri.List()
-		if err != nil {
-			dialog.ShowError(fmt.Errorf("Erro ao listar arquivos: %v", err), ui.window)
-			return
-		}
-
-		ui.arquivosSelURI = nil
-		for _, u := range list {
-			// Tenta abrir o arquivo para garantir que não é uma subpasta
-			if _, err := storage.Reader(u); err == nil {
-				ui.arquivosSelURI = append(ui.arquivosSelURI, u)
+		ui.lblArquivosSel.SetText("Lendo pasta...")
+		
+		go func() {
+			list, err := uri.List()
+			if err != nil {
+				fyneDo(func() { dialog.ShowError(fmt.Errorf("Erro ao listar arquivos: %v", err), ui.window) })
+				return
 			}
-		}
 
-		if len(ui.arquivosSelURI) == 0 {
-			ui.lblArquivosSel.SetText("Nenhum arquivo válido na pasta")
-		} else {
-			ui.lblArquivosSel.SetText(fmt.Sprintf("%d arquivo(s) selecionado(s)", len(ui.arquivosSelURI)))
-		}
+			var validos []fyne.URI
+			for _, u := range list {
+				rc, err := storage.Reader(u)
+				if err == nil {
+					rc.Close()
+					validos = append(validos, u)
+				}
+			}
+
+			fyneDo(func() {
+				ui.arquivosSelURI = validos
+				if len(ui.arquivosSelURI) == 0 {
+					ui.lblArquivosSel.SetText("Nenhum arquivo válido na pasta")
+				} else {
+					ui.lblArquivosSel.SetText(fmt.Sprintf("%d arquivo(s) selecionado(s)", len(ui.arquivosSelURI)))
+				}
+			})
+		}()
 	}, ui.window).Show()
 }
 
@@ -359,7 +294,7 @@ func (ui *DiscordUploaderWindow) onIniciarAndroid() {
 		return
 	}
 	ui.cfg.Content = strings.TrimSpace(ui.contentEntry.Text)
-	ui.executarAndroid(false, "", webhook, ui.arquivosSelURI)
+	ui.executarAndroid(webhook, ui.arquivosSelURI)
 }
 
 func (ui *DiscordUploaderWindow) executar(dryRun bool, pasta, webhook string, arquivos []string) {
@@ -374,7 +309,6 @@ func (ui *DiscordUploaderWindow) executar(dryRun bool, pasta, webhook string, ar
 
 	total := len(arquivos)
 	var ok, falhas, incertos int64
-
 	ctx, cancel := context.WithCancel(context.Background())
 	ui.cancelFn = cancel
 
@@ -385,10 +319,7 @@ func (ui *DiscordUploaderWindow) executar(dryRun bool, pasta, webhook string, ar
 			ui.executando = false
 			fyneDo(func() {
 				ui.setEstadoExecucao(false)
-				if ui.progresso.Max > 0 {
-					ui.progresso.Value = ui.progresso.Max
-					ui.progresso.Refresh()
-				}
+				if ui.progresso.Max > 0 { ui.progresso.Value = ui.progresso.Max; ui.progresso.Refresh() }
 				ui.lblResumo.SetText(fmt.Sprintf("Enviados: %d · Falhas: %d · Incertos: %d", ok, falhas, incertos))
 				ui.btnSalvar.Enable()
 			})
@@ -399,9 +330,7 @@ func (ui *DiscordUploaderWindow) executar(dryRun bool, pasta, webhook string, ar
 				ui.adicionarLog("=== Dry-run ===")
 				for i, arq := range arquivos {
 					nome := arq
-					if rel, err := filepath.Rel(pasta, arq); err == nil {
-						nome = rel
-					}
+					if rel, err := filepath.Rel(pasta, arq); err == nil { nome = rel }
 					ui.adicionarLog(fmt.Sprintf("[%d/%d] %s", i+1, total, nome))
 				}
 				ui.adicionarLog(fmt.Sprintf("\nTotal: %d arquivo(s)\n", total))
@@ -418,11 +347,9 @@ func (ui *DiscordUploaderWindow) executar(dryRun bool, pasta, webhook string, ar
 			}
 
 			nome := arq
-			if rel, err := filepath.Rel(pasta, arq); err == nil {
-				nome = rel
-			}
+			if rel, err := filepath.Rel(pasta, arq); err == nil { nome = rel }
 
-			result := UploadFile(ctx, webhook, arq, ui.cfg)
+			result := UploadFile(ctx, webhook, arq, "", ui.cfg)
 
 			fyneDo(func() {
 				atual := i + 1
@@ -446,17 +373,16 @@ func (ui *DiscordUploaderWindow) executar(dryRun bool, pasta, webhook string, ar
 		}
 
 		fyneDo(func() {
-			switch {
-			case incertos > 0 || falhas > 0:
+			if incertos > 0 || falhas > 0 {
 				dialog.ShowInformation("Concluído com falhas", "Alguns arquivos não foram enviados. Veja o log.", ui.window)
-			default:
+			} else {
 				dialog.ShowInformation("Concluído", "Envio finalizado com sucesso.", ui.window)
 			}
 		})
 	}()
 }
 
-func (ui *DiscordUploaderWindow) executarAndroid(dryRun bool, pasta, webhook string, arquivos []fyne.URI) {
+func (ui *DiscordUploaderWindow) executarAndroid(webhook string, arquivos []fyne.URI) {
 	ui.executando = true
 	ui.setEstadoExecucao(true)
 	ui.limparLog()
@@ -468,7 +394,6 @@ func (ui *DiscordUploaderWindow) executarAndroid(dryRun bool, pasta, webhook str
 
 	total := len(arquivos)
 	var ok, falhas, incertos int64
-
 	ctx, cancel := context.WithCancel(context.Background())
 	ui.cancelFn = cancel
 
@@ -479,10 +404,7 @@ func (ui *DiscordUploaderWindow) executarAndroid(dryRun bool, pasta, webhook str
 			ui.executando = false
 			fyneDo(func() {
 				ui.setEstadoExecucao(false)
-				if ui.progresso.Max > 0 {
-					ui.progresso.Value = ui.progresso.Max
-					ui.progresso.Refresh()
-				}
+				if ui.progresso.Max > 0 { ui.progresso.Value = ui.progresso.Max; ui.progresso.Refresh() }
 				ui.lblResumo.SetText(fmt.Sprintf("Enviados: %d · Falhas: %d · Incertos: %d", ok, falhas, incertos))
 				ui.btnSalvar.Enable()
 			})
@@ -496,22 +418,46 @@ func (ui *DiscordUploaderWindow) executarAndroid(dryRun bool, pasta, webhook str
 			default:
 			}
 
+			nome := u.Name()
+			if nome == "" { nome = u.Path() }
+
+			// CORREÇÃO CRÍTICA: Copia o arquivo para temp LOCAL e fecha a URI IMEDIATAMENTE
 			rc, err := storage.Reader(u)
 			if err != nil {
 				fyneDo(func() {
 					falhas++
-					ui.adicionarLog(fmt.Sprintf("✘ [%d/%d] %s — Falha ao abrir arquivo", i+1, total, u.Path()))
+					ui.adicionarLog(fmt.Sprintf("✘ [%d/%d] %s — Falha ao abrir arquivo", i+1, total, nome))
 				})
 				continue
 			}
 
-			nome := u.Path()
-			if nome == "" {
-				nome = u.String()
+			tmp, err := os.CreateTemp("", "discord-upload-*.tmp")
+			if err != nil {
+				rc.Close()
+				fyneDo(func() {
+					falhas++
+					ui.adicionarLog(fmt.Sprintf("✘ [%d/%d] %s — Falha ao criar temp", i+1, total, nome))
+				})
+				continue
+			}
+			tmpPath := tmp.Name()
+
+			_, copyErr := io.Copy(tmp, rc)
+			rc.Close() // Fecha o arquivo do Android JÁ! (Evita crash)
+			tmp.Close()
+
+			if copyErr != nil {
+				os.Remove(tmpPath)
+				fyneDo(func() {
+					falhas++
+					ui.adicionarLog(fmt.Sprintf("✘ [%d/%d] %s — Falha ao copiar", i+1, total, nome))
+				})
+				continue
 			}
 
-			result := UploadFileFromURI(ctx, webhook, rc, ui.cfg)
-			rc.Close()
+			// Agora envia o arquivo temporário (é seguro)
+			result := UploadFile(ctx, webhook, tmpPath, nome, ui.cfg)
+			os.Remove(tmpPath)
 
 			fyneDo(func() {
 				atual := i + 1
@@ -535,10 +481,9 @@ func (ui *DiscordUploaderWindow) executarAndroid(dryRun bool, pasta, webhook str
 		}
 
 		fyneDo(func() {
-			switch {
-			case incertos > 0 || falhas > 0:
+			if incertos > 0 || falhas > 0 {
 				dialog.ShowInformation("Concluído com falhas", "Alguns arquivos não foram enviados. Veja o log.", ui.window)
-			default:
+			} else {
 				dialog.ShowInformation("Concluído", "Envio finalizado com sucesso.", ui.window)
 			}
 		})
@@ -546,15 +491,16 @@ func (ui *DiscordUploaderWindow) executarAndroid(dryRun bool, pasta, webhook str
 }
 
 func (ui *DiscordUploaderWindow) setEstadoExecucao(executando bool) {
-	setEnabled(ui.btnTestar, !executando)
-	setEnabled(ui.btnIniciar, !executando)
-	setEnabled(ui.btnCancelar, executando)
-	setEnabled(ui.webhookEntry, !executando)
-	setEnabled(ui.folderEntry, !executando)
-	setEnabled(ui.recursivoChk, !executando)
-	setEnabled(ui.ocultosChk, !executando)
-	setEnabled(ui.btnSelecionarArquivos, !executando)
-	setEnabled(ui.contentEntry, !executando)
+	habilitar := !executando
+	if ui.btnTestar != nil { if habilitar { ui.btnTestar.Enable() } else { ui.btnTestar.Disable() } }
+	if ui.btnIniciar != nil { if habilitar { ui.btnIniciar.Enable() } else { ui.btnIniciar.Disable() } }
+	if ui.btnCancelar != nil { if executando { ui.btnCancelar.Enable() } else { ui.btnCancelar.Disable() } }
+	if ui.webhookEntry != nil { if habilitar { ui.webhookEntry.Enable() } else { ui.webhookEntry.Disable() } }
+	if ui.folderEntry != nil { if habilitar { ui.folderEntry.Enable() } else { ui.folderEntry.Disable() } }
+	if ui.recursivoChk != nil { if habilitar { ui.recursivoChk.Enable() } else { ui.recursivoChk.Disable() } }
+	if ui.ocultosChk != nil { if habilitar { ui.ocultosChk.Enable() } else { ui.ocultosChk.Disable() } }
+	if ui.btnSelecionarArquivos != nil { if habilitar { ui.btnSelecionarArquivos.Enable() } else { ui.btnSelecionarArquivos.Disable() } }
+	if ui.contentEntry != nil { if habilitar { ui.contentEntry.Enable() } else { ui.contentEntry.Disable() } }
 }
 
 func (ui *DiscordUploaderWindow) limparLog() {
@@ -569,9 +515,7 @@ func (ui *DiscordUploaderWindow) adicionarLog(linha string) {
 }
 
 func (ui *DiscordUploaderWindow) onCancelar() {
-	if ui.cancelFn != nil {
-		ui.cancelFn()
-	}
+	if ui.cancelFn != nil { ui.cancelFn() }
 }
 
 func (ui *DiscordUploaderWindow) onSalvar() {
@@ -579,5 +523,5 @@ func (ui *DiscordUploaderWindow) onSalvar() {
 }
 
 func fyneDo(f func()) {
-	f()
+	fyne.Do(f)
 }

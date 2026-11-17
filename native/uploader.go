@@ -14,25 +14,21 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"fyne.io/fyne/v2"
 )
 
-// UploadResult é o resultado do upload de um único arquivo.
 type UploadResult struct {
 	Success   bool
-	Uncertain bool // true se o servidor pode ter recebido o arquivo (não reenviar cegamente)
+	Uncertain bool
 	Message   string
 	BytesSent int64
 }
 
-// UploadConfig contém as configurações de upload.
 type UploadConfig struct {
 	MaxTentativas  int
 	BackoffInicial time.Duration
 	BackoffMaximo  time.Duration
 	MaxRetryAfter  time.Duration
-	CurlMaxTime    time.Duration // timeout de cada requisição HTTP
+	CurlMaxTime    time.Duration
 	Content        string
 	ThreadID       string
 	ThreadName     string
@@ -40,7 +36,6 @@ type UploadConfig struct {
 	Verbose        bool
 }
 
-// DefaultConfig retorna uma configuração com valores padrão.
 func DefaultConfig() UploadConfig {
 	return UploadConfig{
 		MaxTentativas:  defaultMaxTentativas,
@@ -51,9 +46,7 @@ func DefaultConfig() UploadConfig {
 	}
 }
 
-// UploadFile envia um único arquivo para o webhook do Discord, com retry e
-// classificação de resposta fiel ao script Bash.
-func UploadFile(ctx context.Context, webhookURL string, arquivo string, cfg UploadConfig) UploadResult {
+func UploadFile(ctx context.Context, webhookURL string, arquivo string, nomeBase string, cfg UploadConfig) UploadResult {
 	result := UploadResult{}
 
 	info, err := os.Stat(arquivo)
@@ -63,62 +56,53 @@ func UploadFile(ctx context.Context, webhookURL string, arquivo string, cfg Uplo
 	}
 	result.BytesSent = info.Size()
 
-	f, err := os.Open(arquivo)
-	if err != nil {
-		result.Message = fmt.Sprintf("Não foi possível abrir o arquivo: %v", err)
-		return result
+	if nomeBase == "" {
+		nomeBase = filepath.Base(arquivo)
 	}
-	defer f.Close()
 
-	nomeBase := filepath.Base(arquivo)
 	tentativa := 1
 	espera := cfg.BackoffInicial
 
 	for {
 		select {
 		case <-ctx.Done():
-			result.Success = false
-			result.Uncertain = false
 			result.Message = "Cancelado antes de iniciar o envio."
 			return result
 		default:
 		}
 
-		body := new(bytes.Buffer)
-		writer := multipart.NewWriter(body)
-
-		part, err := writer.CreateFormFile("files[0]", nomeBase)
+		f, err := os.Open(arquivo)
 		if err != nil {
-			result.Message = fmt.Sprintf("Erro ao montar multipart: %v", err)
-			return result
-		}
-		if _, err := io.Copy(part, f); err != nil {
-			result.Message = fmt.Sprintf("Erro ao ler o arquivo: %v", err)
-			return result
-		}
-		// Volta ao início para a próxima tentativa
-		if _, err := f.Seek(0, io.SeekStart); err != nil {
-			result.Message = fmt.Sprintf("Erro ao reposicionar o arquivo: %v", err)
+			result.Message = fmt.Sprintf("Não foi possível abrir o arquivo: %v", err)
 			return result
 		}
 
-		if cfg.Content != "" {
-			writer.WriteField("content", cfg.Content)
-		}
-		if cfg.ThreadID != "" {
-			writer.WriteField("thread_id", cfg.ThreadID)
-		}
-		if cfg.ThreadName != "" {
-			writer.WriteField("thread_name", cfg.ThreadName)
-		}
+		pr, pw := io.Pipe()
+		writer := multipart.NewWriter(pw)
 
-		if err := writer.Close(); err != nil {
-			result.Message = fmt.Sprintf("Erro ao fechar multipart: %v", err)
-			return result
-		}
+		go func() {
+			defer f.Close()
+			defer pw.Close()
 
-		req, err := http.NewRequestWithContext(ctx, "POST", webhookURL, body)
+			part, err := writer.CreateFormFile("files[0]", nomeBase)
+			if err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+			if _, err := io.Copy(part, f); err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+
+			if cfg.Content != "" { writer.WriteField("content", cfg.Content) }
+			if cfg.ThreadID != "" { writer.WriteField("thread_id", cfg.ThreadID) }
+			if cfg.ThreadName != "" { writer.WriteField("thread_name", cfg.ThreadName) }
+			writer.Close()
+		}()
+
+		req, err := http.NewRequestWithContext(ctx, "POST", webhookURL, pr)
 		if err != nil {
+			pr.CloseWithError(err)
 			result.Message = fmt.Sprintf("Erro ao criar requisição: %v", err)
 			return result
 		}
@@ -129,18 +113,17 @@ func UploadFile(ctx context.Context, webhookURL string, arquivo string, cfg Uplo
 
 		resp, err := http.DefaultClient.Do(req)
 
-		// Correção: Garante que o context é liberado
 		if err != nil {
 			cancel()
+			pr.CloseWithError(err)
+			
 			if ctx.Err() != nil {
 				result.Message = "Cancelado durante a requisição."
 				return result
 			}
 			if tentativa < cfg.MaxTentativas {
 				msg := fmt.Sprintf("Falha de conexão antes do envio (%v). Tentando novamente em %s...", err, espera)
-				if !cfg.Quiet {
-					fmt.Println(msg)
-				}
+				if !cfg.Quiet { fmt.Println(msg) }
 				select {
 				case <-ctx.Done():
 					result.Message = "Cancelado durante o retry."
@@ -157,17 +140,12 @@ func UploadFile(ctx context.Context, webhookURL string, arquivo string, cfg Uplo
 
 		respBody, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		cancel() // Libera o context após ler o body
+		pr.Close()
+		cancel()
 
 		httpCode := resp.StatusCode
 
-		if httpCode == 204 {
-			result.Success = true
-			result.Message = "Enviado."
-			return result
-		}
-
-		if httpCode == 200 && bytes.Contains(respBody, []byte(`"id"`)) {
+		if httpCode == 204 || (httpCode == 200 && bytes.Contains(respBody, []byte(`"id"`))) {
 			result.Success = true
 			result.Message = "Enviado."
 			return result
@@ -181,9 +159,7 @@ func UploadFile(ctx context.Context, webhookURL string, arquivo string, cfg Uplo
 			}
 			if tentativa < cfg.MaxTentativas {
 				msg := fmt.Sprintf("Rate limit (429). Aguardando %ds...", int(retryAfter.Seconds()))
-				if !cfg.Quiet {
-					fmt.Println(msg)
-				}
+				if !cfg.Quiet { fmt.Println(msg) }
 				select {
 				case <-ctx.Done():
 					result.Message = "Cancelado durante o rate limit."
@@ -219,55 +195,11 @@ func UploadFile(ctx context.Context, webhookURL string, arquivo string, cfg Uplo
 	}
 }
 
-// UploadFileFromURI envia um arquivo a partir de uma URI do Android
-// (content://...), copiando para um temp file e aplicando a mesma lógica
-// de retry de UploadFile.
-func UploadFileFromURI(ctx context.Context, webhookURL string, uri fyne.URIReadCloser, cfg UploadConfig) UploadResult {
-	result := UploadResult{}
-
-	defer uri.Close()
-
-	// Copia o conteúdo da URI para um arquivo temporário.
-	tmp, err := os.CreateTemp("", "discord-upload-*.tmp")
-	if err != nil {
-		result.Message = fmt.Sprintf("Erro ao criar temp file: %v", err)
-		return result
-	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-
-	_, err = io.Copy(tmp, uri)
-	if err != nil {
-		result.Message = fmt.Sprintf("Erro ao ler URI: %v", err)
-		return result
-	}
-	if err := tmp.Close(); err != nil {
-		result.Message = fmt.Sprintf("Erro ao fechar temp file: %v", err)
-		return result
-	}
-
-	// Reabre para obter tamanho e usar UploadFile.
-	info, err := os.Stat(tmpPath)
-	if err != nil {
-		result.Message = fmt.Sprintf("Não foi possível ler o temp file: %v", err)
-		return result
-	}
-	result.BytesSent = info.Size()
-
-	// Delegar a lógica de retry ao UploadFile com o caminho temp.
-	return UploadFile(ctx, webhookURL, tmpPath, cfg)
-}
-
 func extrairRetryAfter(header http.Header, body []byte) time.Duration {
 	if v := header.Get("Retry-After"); v != "" {
-		if d, err := parseRetryAfter(v); err == nil {
-			return d
-		}
+		if d, err := parseRetryAfter(v); err == nil { return d }
 	}
-	// Usando JSON parse estruturado em vez de string hack
-	var data struct {
-		RetryAfter float64 `json:"retry_after"`
-	}
+	var data struct { RetryAfter float64 `json:"retry_after"` }
 	if err := json.Unmarshal(body, &data); err == nil && data.RetryAfter > 0 {
 		return time.Duration(data.RetryAfter * float64(time.Second))
 	}
@@ -281,9 +213,7 @@ func parseRetryAfter(v string) (time.Duration, error) {
 	}
 	if t, err := time.Parse(time.RFC1123, v); err == nil {
 		d := time.Until(t)
-		if d > 0 {
-			return d, nil
-		}
+		if d > 0 { return d, nil }
 		return 0, nil
 	}
 	return 0, fmt.Errorf("inválido")
@@ -291,40 +221,26 @@ func parseRetryAfter(v string) (time.Duration, error) {
 
 func backoffProximo(atual, maximo time.Duration) time.Duration {
 	proximo := atual * 2
-	if proximo > maximo {
-		return maximo
-	}
+	if proximo > maximo { return maximo }
 	return proximo
 }
 
 func EncontraArquivos(pasta string, recursivo, ignorarOcultos bool) ([]string, error) {
 	var resultado []string
 	caminhoFn := func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		if ignorarOcultos && strings.HasPrefix(d.Name(), ".") {
-			return nil
-		}
+		if err != nil || d.IsDir() { return nil }
+		if ignorarOcultos && strings.HasPrefix(d.Name(), ".") { return nil }
 		resultado = append(resultado, path)
 		return nil
 	}
 	if recursivo {
-		if err := filepath.WalkDir(pasta, caminhoFn); err != nil {
-			return nil, err
-		}
+		if err := filepath.WalkDir(pasta, caminhoFn); err != nil { return nil, err }
 	} else {
 		entradas, err := os.ReadDir(pasta)
-		if err != nil {
-			return nil, err
-		}
+		if err != nil { return nil, err }
 		for _, d := range entradas {
-			if d.IsDir() {
-				continue
-			}
-			if ignorarOcultos && strings.HasPrefix(d.Name(), ".") {
-				continue
-			}
+			if d.IsDir() { continue }
+			if ignorarOcultos && strings.HasPrefix(d.Name(), ".") { continue }
 			resultado = append(resultado, filepath.Join(pasta, d.Name()))
 		}
 	}
@@ -333,23 +249,13 @@ func EncontraArquivos(pasta string, recursivo, ignorarOcultos bool) ([]string, e
 
 func URLValida(webhook string) bool {
 	u, err := url.Parse(webhook)
-	if err != nil || u.Scheme != "https" {
-		return false
-	}
-
+	if err != nil || u.Scheme != "https" { return false }
 	hostsValidos := []string{"discord.com", "discordapp.com", "ptb.discord.com", "canary.discord.com"}
 	hostOK := false
 	for _, h := range hostsValidos {
-		if u.Host == h || strings.HasSuffix(u.Host, "."+h) {
-			hostOK = true
-			break
-		}
+		if u.Host == h || strings.HasSuffix(u.Host, "."+h) { hostOK = true; break }
 	}
-	if !hostOK {
-		return false
-	}
-	if !strings.HasPrefix(u.Path, "/api/webhooks/") && !strings.HasPrefix(u.Path, "/api/v") {
-		return false
-	}
+	if !hostOK { return false }
+	if !strings.HasPrefix(u.Path, "/api/webhooks/") && !strings.HasPrefix(u.Path, "/api/v") { return false }
 	return true
 }

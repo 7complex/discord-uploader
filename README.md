@@ -4,10 +4,13 @@
 [![ShellCheck](https://img.shields.io/badge/ShellCheck-pass-brightgreen)](https://github.com/7complex/discord-uploader/actions)
 [![Go](https://img.shields.io/badge/Go-1.21%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 [![Fyne](https://img.shields.io/badge/Fyne-2.4.4-009688?logo=go&logoColor=white)](https://fyne.io/)
+[![Android](https://img.shields.io/badge/Android-APK-green?logo=android&logoColor=white)](https://github.com/7complex/discord-uploader/releases)
 
-Envia arquivos para um canal do Discord via webhook. Disponível em três frentes:
-um **CLI em Bash** (Linux/macOS), uma **GUI em Go + Fyne** (wrapper do CLI, AppImage para Linux)
-e uma **GUI nativa em Go** (sem dependência de Bash, .exe para Windows e binário Linux).
+Envia arquivos para um canal do Discord via webhook. Disponível em quatro frentes:
+um **CLI em Bash** (Linux/macOS), uma **GUI em Go + Fyne** (wrapper do CLI, AppImage para Linux),
+uma **GUI nativa em Go** (sem dependência de Bash, .exe para Windows, binário Linux e .apk para Android).
+
+Versão: **1.1.0**
 
 O idioma da interface é português, mas a documentação está em inglês para alcance global.
 
@@ -21,7 +24,8 @@ Todos os binários são publicados na aba **Releases** do GitHub:
 
 > **Windows:** pegue o arquivo `DiscordUploader.exe` na aba Releases.<br>
 > **Linux GUI:** pegue o arquivo `DiscordUploader-x86_64.AppImage` na aba Releases.<br>
-> **Linux CLI:** pegue o arquivo `discord-uploader.sh` na aba Releases.
+> **Linux CLI:** pegue o arquivo `discord-uploader.sh` na aba Releases.<br>
+> **Android:** pegue o arquivo `.apk` na aba Releases.
 
 ---
 
@@ -33,7 +37,7 @@ Todos os binários são publicados na aba **Releases** do GitHub:
 - 🛡️ **Classificação de resposta**: diferencia sucesso, falha permanente e resultado incerto (5xx/200 sem ID).
 - 🖥️ **Três interfaces**: CLI em Bash, GUI em Go/Fyne (wrapper) e GUI nativa em Go.
 - 🔒 **Segurança do webhook**: a URL nunca viaja em argv visível via `ps`.
-- 🌙 **Tema escuro fixo** nas GUIs.
+- 🌙 **Tema AMOLED (Preto Puro)** nas GUIs: fundo #000000, superfícies #121212, destaque Discord #5865F2.
 - 🇧🇷 **Interface em português**.
 
 ---
@@ -60,6 +64,8 @@ chmod +x DiscordUploader-x86_64.AppImage
 
 > O AppImage requer **FUSE2** no host (`sudo apt install libfuse2`). Caso não tenha FUSE, use:
 > `./DiscordUploader-x86_64.AppImage --appimage-extract` seguido de `./squashfs-root/AppRun`.
+>
+> O AppImage é **nativo (Go + Fyne)** e não requer Bash, `curl` ou `coreutils` no host — apenas o próprio executável.
 
 ### Linux — CLI (Bash)
 
@@ -86,13 +92,22 @@ chmod +x discord-uploader.sh
 
 > ⚠️ **Segurança:** não passe o webhook por `--webhook URL` em scripts compartilhados, pois a URL ficaria visível em `ps`. Prefira `--webhook-file`, `--webhook-stdin` ou a variável de ambiente `DISCORD_WEBHOOK`.
 
+### Android
+
+1. Acesse a aba [Releases](https://github.com/7complex/discord-uploader/releases).
+2. Baixe o arquivo `.apk` na aba Releases.
+3. No seu dispositivo Android, permita a instalação de fontes desconhecidas:
+   **Ajustes > Apps > Acesso especial a apps > Instalar apps desconhecidos > Seu navegador > Permitir nesta fonte**.
+4. Abra o APK baixado e siga as instruções de instalação.
+5. Informe o webhook do Discord, selecione os arquivos e clique em **Iniciar Envio**.
+
 ---
 
 ## 🏗️ Building from Source
 
 ### GUI (Fyne wrapper — AppImage para Linux)
 
-Localizada em `gui/`. Requer Go 1.21+ e a CLI do Fyne.
+Localizada em `gui/`. Requer Go 1.21+, a CLI do Fyne e `appimagetool`.
 
 ```bash
 cd gui
@@ -125,6 +140,18 @@ cd native
 ```
 
 O executável Windows usa o flag `-H windowsgui` para não abrir o console preto do CMD ao clicar.
+
+**Android (APK):**
+
+Requer Android Studio, `ANDROID_HOME` e `ANDROID_NDK_HOME` configurados.
+
+```bash
+cd native
+./build-android.sh
+# gera: native/DiscordUploader.apk (ou similar)
+```
+
+O `build-android.sh` instala a CLI do Fyne (se necessário), valida as variáveis de ambiente do Android e executa `fyne package -os android`.
 
 ---
 
